@@ -1,0 +1,187 @@
+// Vizora — Prisma schema
+// Core concepts: a Collection holds many Images. Each Image is analyzed once
+// (vision + OCR) and produces ExtractedContent rows. Extracted entities are
+// normalized and merged into collection-level Entity rows, each backed by one
+// or more EntitySource rows that point back to the exact image + evidence
+// text that produced them. This is what makes every answer traceable.
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum ImageStatus {
+  UPLOADING
+  PROCESSING
+  ANALYZED
+  FAILED
+}
+
+enum ImageCategory {
+  MOVIE_POSTER
+  BOOK
+  PRODUCT
+  RECEIPT
+  DOCUMENT
+  SCREENSHOT
+  EVENT_FLYER
+  BUSINESS_CARD
+  PHOTO
+  OTHER
+}
+
+enum ExtractedContentType {
+  TITLE
+  NAME
+  PRICE
+  DATE
+  PHONE
+  EMAIL
+  ADDRESS
+  COMPANY
+  URL
+  ID
+  LABEL
+  RAW_TEXT
+  OBJECT
+  SCENE
+  ISSUE
+}
+
+model Collection {
+  id        String   @id @default(cuid())
+  name      String
+  ownerId   String?  // anonymous per-browser owner (httpOnly cookie); null = unclaimed legacy row
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  images   Image[]
+  entities Entity[]
+  queries  Query[]
+  reports  Report[]
+
+  @@index([ownerId])
+}
+
+model Image {
+  id                 String      @id @default(cuid())
+  collectionId       String
+  collection         Collection  @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  cloudinaryPublicId String
+  secureUrl          String
+  thumbnailUrl       String?
+  filename           String
+  width              Int?
+  height             Int?
+  bytes              Int?
+  format             String?
+
+  status             ImageStatus @default(UPLOADING)
+  stage              String?     // real processing stage: analyzing | extracting | syncing | ready
+  errorMessage       String?
+
+  category           ImageCategory?
+  sceneTags          String[]    @default([])
+  objectTags         String[]    @default([])
+  rawText            String?     // full OCR dump, for full-text search fallback
+  summary            String?     // one-line AI summary of the image
+  aiModel            String?     // which model analyzed it
+
+  metadata           Json?       // free-form: width/height/exif/etc
+
+  createdAt          DateTime    @default(now())
+  analyzedAt         DateTime?
+
+  extractedContent   ExtractedContent[]
+  entitySources      EntitySource[]
+
+  @@index([collectionId])
+  @@index([collectionId, status])
+  @@index([collectionId, category])
+}
+
+model ExtractedContent {
+  id              String                @id @default(cuid())
+  imageId         String
+  image           Image                 @relation(fields: [imageId], references: [id], onDelete: Cascade)
+
+  type            ExtractedContentType
+  value           String                // raw value as seen in the image
+  normalizedValue String?               // lowercase/trimmed/canonicalized form
+  confidence      Float?
+  metadata        Json?
+
+  createdAt       DateTime              @default(now())
+
+  @@index([imageId])
+  @@index([imageId, type])
+}
+
+model Entity {
+  id             String   @id @default(cuid())
+  collectionId   String
+  collection     Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  type           String   // e.g. "movie", "product", "company", "person", "book", "event", "issue"
+  canonicalValue String
+  normalizedValue String  // rule-based normalized form, used for dedup matching
+  metadata       Json?    // e.g. { year, director } for movies
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  sources        EntitySource[]
+
+  @@index([collectionId])
+  @@index([collectionId, type])
+  @@index([collectionId, type, normalizedValue])
+}
+
+model EntitySource {
+  id         String   @id @default(cuid())
+  entityId   String
+  entity     Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  imageId    String
+  image      Image    @relation(fields: [imageId], references: [id], onDelete: Cascade)
+
+  evidence   String   // the literal text/region that produced this match
+  confidence Float?
+
+  createdAt  DateTime @default(now())
+
+  @@index([entityId])
+  @@index([imageId])
+}
+
+model Query {
+  id           String   @id @default(cuid())
+  collectionId String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  query        String
+  resultType   String?  // "entity_list" | "image_list" | "table" | "issue_list" | "text"
+  resultJson   Json?
+
+  createdAt    DateTime @default(now())
+
+  @@index([collectionId])
+}
+
+model Report {
+  id           String   @id @default(cuid())
+  collectionId String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  title        String
+  summaryJson  Json
+
+  createdAt    DateTime @default(now())
+
+  @@index([collectionId])
+}

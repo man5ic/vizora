@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+:root {
+  --color-ink: #0e1119;
+  --color-surface: #161a27;
+  --color-surface-raised: #1d2233;
+  --color-border: #2a3047;
+  --color-border-soft: #232838;
+  --color-text: #e9eaf2;
+  --color-text-muted: #8b90a8;
+  --color-text-faint: #5b6079;
+
+  --color-accent: #6e6af0;
+  --color-accent-soft: #6e6af01a;
+  --color-evidence: #e7a845;
+  --color-evidence-soft: #e7a84520;
+  --color-issue: #e4636f;
+  --color-issue-soft: #e4636f20;
+  --color-success: #35c7a6;
+  --color-success-soft: #35c7a620;
+}
+
+@theme inline {
+  --color-ink: var(--color-ink);
+  --color-surface: var(--color-surface);
+  --color-surface-raised: var(--color-surface-raised);
+  --color-border: var(--color-border);
+  --color-text: var(--color-text);
+  --color-text-muted: var(--color-text-muted);
+  --color-accent: var(--color-accent);
+  --color-evidence: var(--color-evidence);
+  --color-issue: var(--color-issue);
+  --color-success: var(--color-success);
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--color-ink);
+  color: var(--color-text);
+  font-family: var(--font-body), system-ui, sans-serif;
+}
+
+h1, h2, h3, h4, .font-display {
+  font-family: var(--font-display), system-ui, sans-serif;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: white;
+}
+
+/* Thin, quiet scrollbars — the collection itself should carry the eye, not chrome. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 8px;
+}
+
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 var(--color-accent-soft); }
+  100% { box-shadow: 0 0 0 6px transparent; }
+}
+.processing-pulse {
+  animation: pulse-ring 1.6s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .processing-pulse { animation: none; }
+}
