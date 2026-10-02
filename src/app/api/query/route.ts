@@ -9,7 +9,7 @@ export const maxDuration = 60;
 export async function POST(req: NextRequest) {
   if (!isAiConfigured()) {
     return NextResponse.json(
-      { error: "AI provider is not configured on the server. Set GEMINI_API_KEY." },
+      { error: "AI provider is not configured on the server. Set ANTHROPIC_API_KEY." },
       { status: 503 }
     );
   }

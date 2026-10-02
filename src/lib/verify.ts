@@ -9,8 +9,8 @@ import type { QueryResult, QueryResultItem, QueryResultSource } from "@/types";
  *  - entity_list / issue_list: the entity must exist in this collection; its
  *    sources, evidence text and confidence are rebuilt from EntitySource rows
  *    (anything the model wrote for those fields is discarded).
- *  - table: the source image must exist and the row's values must actually
- *    appear in that image's stored text (OCR text, extracted fields, entity
+ *  - table: the source image must exist and the row's values (every
+ *    non-empty cell) must actually appear in that image's stored text (OCR text, extracted fields, entity
  *    evidence). Rows that can't be found there are dropped.
  *  - image_list: the image must exist and be analyzed. (Whether an image
  *    "matches" the question is still the model's judgement — we verify the
@@ -18,7 +18,21 @@ import type { QueryResult, QueryResultItem, QueryResultSource } from "@/types";
  *  - overview: counts are recomputed from the database; model numbers are ignored.
  */
 
-const alnum = (s: string) => s.toLowerCase().normalize("NFKC").replace(/[^\p{L}\p{N}]+/gu, "");
+/**
+ * Normalizes text for whole-token comparison: lowercases, drops thousands
+ * separators ("80,000" -> "80000"), and turns every other run of punctuation,
+ * currency symbols and whitespace into a single space. Cells are then matched
+ * as whole-token phrases, so "1" can't be "found" inside "2018" or "10".
+ */
+const tokens = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize("NFKC")
+    .replace(/(?<=\d),(?=\d{3}(?:\D|$))/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+
+const containsPhrase = (corpus: string, cell: string) => ` ${corpus} `.includes(` ${cell} `);
 
 const OVERVIEW_LABELS: Record<string, string> = {
   movie: "🎬 Movies",
@@ -101,7 +115,7 @@ async function verifyTableItems(collectionId: string, items: QueryResultItem[]):
   for (const img of images) {
     corpus.set(
       img.id,
-      alnum(
+      tokens(
         [
           img.rawText ?? "",
           ...img.extractedContent.map((c) => c.value),
@@ -111,14 +125,19 @@ async function verifyTableItems(collectionId: string, items: QueryResultItem[]):
     );
   }
 
+  // Fail closed: EVERY non-empty cell in a row must appear in that image's stored
+  // text. A row with even one ungrounded cell (e.g. a value the model computed or
+  // invented) is dropped rather than shown as evidence. The query prompt tells the
+  // model to copy cell values verbatim, so legitimate rows pass; rows that reformat
+  // or derive a value (say, a date rewritten as ISO) are dropped too — deliberately
+  // strict, because a missing row is recoverable and a fabricated one is not.
   return items
     .filter((item) => {
       const text = item.imageId ? corpus.get(item.imageId) : undefined;
       if (text === undefined) return false;
-      const cells = (item.cells ?? []).map(alnum).filter((c) => c.length > 0);
+      const cells = (item.cells ?? []).map(tokens).filter((c) => c.length > 0);
       if (cells.length === 0) return false;
-      const found = cells.filter((c) => text.includes(c)).length;
-      return found / cells.length >= 0.5; // tolerate light reformatting of derived cells
+      return cells.every((c) => containsPhrase(text, c));
     })
     .map((item) => ({ ...item, verified: true }));
 }

@@ -99,7 +99,7 @@ export async function processImage(imageId: string, buffer: Buffer, mimeType: st
         status: "FAILED",
         stage: null,
         errorMessage:
-          "AI provider is not configured on the server (missing GEMINI_API_KEY). Image was uploaded but not analyzed.",
+          "AI provider is not configured on the server (missing ANTHROPIC_API_KEY). Image was uploaded but not analyzed.",
       },
     });
     return;
@@ -122,7 +122,7 @@ export async function processImage(imageId: string, buffer: Buffer, mimeType: st
         objectTags: result.objectTags,
         rawText: result.rawText || null,
         summary: result.summary || null,
-        aiModel: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+        aiModel: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6",
       },
     });
 

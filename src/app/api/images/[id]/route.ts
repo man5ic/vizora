@@ -1,54 +1,24 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { deleteImage, evidenceFocusUrl, isCloudinaryConfigured } from "@/lib/cloudinary";
+import { processImage } from "@/lib/processing";
 import { requireImage } from "@/lib/auth";
-import { removeEmptyEntities } from "@/lib/processing";
+import { db } from "@/lib/db";
 
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const access = await requireImage(id);
-  if (!access.ok) return access.response;
+export const maxDuration = 60;
 
-  const image = await db.image.findUnique({
-    where: { id },
-    include: {
-      extractedContent: { orderBy: { type: "asc" } },
-      entitySources: {
-        include: { entity: { select: { id: true, type: true, canonicalValue: true } } },
-      },
-    },
-  });
-  if (!image) return NextResponse.json({ error: "Image not found." }, { status: 404 });
-
-  const evidenceUrl = isCloudinaryConfigured() ? evidenceFocusUrl(image.cloudinaryPublicId) : null;
-  return NextResponse.json({ image: { ...image, evidenceUrl } });
-}
-
-/**
- * Delete order matters: Cloudinary first, then Postgres. If Cloudinary fails
- * we keep the DB row and report the error so the user can retry, rather than
- * orphaning a paid-for asset that nothing references any more.
- */
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const access = await requireImage(id);
   if (!access.ok) return access.response;
   const { image } = access;
 
-  if (isCloudinaryConfigured()) {
-    try {
-      await deleteImage(image.cloudinaryPublicId);
-    } catch (err) {
-      console.error(`[vizora] Cloudinary delete failed for ${image.id}:`, err);
-      return NextResponse.json(
-        { error: "Could not remove the asset from Cloudinary, so nothing was deleted. Please try again." },
-        { status: 502 }
-      );
-    }
+  const res = await fetch(image.secureUrl);
+  if (!res.ok) {
+    return NextResponse.json({ error: "Could not re-fetch source image from Cloudinary." }, { status: 502 });
   }
+  const buffer = Buffer.from(await res.arrayBuffer());
+  const mimeType = res.headers.get("content-type") || `image/${image.format || "jpeg"}`;
 
-  await db.image.delete({ where: { id } });
-  // EntitySource rows cascade away with the image; drop entities left with no evidence.
-  await removeEmptyEntities(image.collectionId);
-  return NextResponse.json({ ok: true });
+  await processImage(id, buffer, mimeType);
+  const updated = await db.image.findUnique({ where: { id } });
+  return NextResponse.json({ image: updated });
 }

@@ -27,7 +27,7 @@ results that link straight back to the exact image and evidence that
 produced them.
 
 ```
-Upload → Cloudinary ingest → Gemini vision/OCR → structured entities
+Upload → Cloudinary ingest → Claude vision/OCR → structured entities
    → deduplicated across the collection → Ask Vizora → answer + proof
 ```
 
@@ -125,8 +125,8 @@ format/dimensions/delivery settings.
 Deliberately simple, per the brief — no multi-agent framework, no vector
 database, no custom model training:
 
-1. **Vision/media layer** — one Gemini vision call per image (via
-   `@google/genai`) returns category, scene tags, object tags, full OCR
+1. **Vision/media layer** — one Claude vision call per image (via
+   `@anthropic-ai/sdk`) returns category, scene tags, object tags, full OCR
    text, structured fields, and named entities. `src/lib/ai.ts` →
    `analyzeImageBuffer`.
 2. **Extraction/persistence** — results are written to Postgres
@@ -140,7 +140,7 @@ database, no custom model training:
    the collection's real vocabulary. Candidates come from Cloudinary Search
    plus structured Postgres lookups; broad questions, empty matches or any
    failure fall back to the full collection, so narrowing can save work but
-   never silently lose an answer. A text-only Gemini call then reasons over
+   never silently lose an answer. A text-only Claude call then reasons over
    the *already-extracted* candidate data (never re-runs vision per query) and
    returns one of six structured result shapes:
    entity list, table, image grid, issue list, category **overview**, or
@@ -149,7 +149,7 @@ database, no custom model training:
 5. **Response layer** — the UI renders whichever shape came back, always
    with clickable, verified source chips. `src/components/ResultsPanel.tsx`.
 
-Model defaults to development model `gemini-2.5-flash`, overridable via `GEMINI_MODEL`.
+Model defaults to `claude-sonnet-4-6`, overridable via `ANTHROPIC_MODEL`.
 
 ## 8. Evidence architecture
 
@@ -159,7 +159,7 @@ reasoning call, `verifyResult` (`src/lib/verify.ts`) grounds every result:
 | Result type | What is verified |
 |---|---|
 | Entity list / issue list | The entity id must exist in this collection (and be an `issue` for issue lists). Sources, evidence text and confidence are **rebuilt from `EntitySource` rows** — anything the model wrote for those fields is discarded. |
-| Table | The source image must exist, and the row's values must actually appear in that image's stored text (OCR text, extracted fields, entity evidence). Rows that can't be found are dropped. |
+| Table | The source image must exist, and **every** non-empty cell in the row must appear, as a whole token or phrase, in that image's stored text (OCR text, extracted fields, entity evidence). One ungrounded cell drops the whole row. This is deliberately strict: rows that reformat or derive a value (e.g. a date rewritten as ISO) are dropped too. |
 | Image list | The image must exist and be analyzed. Whether it *matches the question* is still the model's judgement; only the asset is verified. |
 | Overview | Counts are recomputed from the database; model-written numbers are ignored. |
 
@@ -195,14 +195,14 @@ shape per question.
 - **PostgreSQL** via **Prisma**
 - **Cloudinary** — upload, tagging, contextual metadata, transformation,
   optimized delivery
-- **Google Gemini** (`@google/genai`) — vision analysis + query
+- **Anthropic Claude** (`@anthropic-ai/sdk`) — vision analysis + query
   reasoning + report narrative
 
 ## 11. Setup
 
 ```bash
 npm install
-cp .env.example .env    # fill in DATABASE_URL, Cloudinary + Gemini keys
+cp .env.example .env    # fill in DATABASE_URL, Cloudinary + Anthropic keys
 npx prisma generate
 npx prisma db push
 npm run dev
@@ -226,8 +226,8 @@ DATABASE_URL=              # any Postgres connection string
 CLOUDINARY_CLOUD_NAME=
 CLOUDINARY_API_KEY=
 CLOUDINARY_API_SECRET=
-GEMINI_API_KEY=
-GEMINI_MODEL=gemini-2.5-flash   # optional override; defaults to gemini-2.5-flash
+ANTHROPIC_API_KEY=
+ANTHROPIC_MODEL=claude-sonnet-4-6   # optional override
 ```
 
 The app fails loudly and specifically if any of these are missing (see
@@ -256,7 +256,7 @@ worth doing before a live demo:
 
 - Missing Cloudinary config → `/api/upload` returns a clear 503 with the
   exact env vars to set, before touching any file.
-- Missing Gemini config → images still upload and store in
+- Missing Anthropic config → images still upload and store in
   Cloudinary/Postgres, but land in `FAILED` status with an explicit
   message (never a silent fake result); `/api/query` and `/api/report`
   return an explicit 503 rather than fabricating an answer.
@@ -299,7 +299,7 @@ prisma/schema.prisma          Collection / Image / ExtractedContent / Entity / E
 src/lib/
   db.ts                       Prisma client singleton
   cloudinary.ts               Upload, transforms, tag/metadata sync, Search API retrieval, delete
-  ai.ts                       Gemini vision analysis + collection query engine + report narrative
+  ai.ts                       Claude vision analysis + collection query engine + report narrative
   normalize.ts                Entity normalization + similarity-based dedup matching
   processing.ts               Per-image pipeline: analyze -> persist -> merge entities -> sync to Cloudinary
   retrieval.ts                Retrieval planning -> Cloudinary Search + structured Postgres -> candidates

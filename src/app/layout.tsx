@@ -16,7 +16,7 @@ const body = Inter({
 export const metadata: Metadata = {
   title: "Vizora — Ask your images anything",
   description:
-    "Vizora turns unstructured image collections into searchable, structured knowledge — powered by Cloudinary and Google Gemini. Ask a question, get an answer with evidence.",
+    "Vizora turns unstructured image collections into searchable, structured knowledge — powered by Cloudinary and Claude. Ask a question, get an answer with evidence.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
